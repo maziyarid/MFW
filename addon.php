@@ -8158,4 +8158,131 @@ class MFW_AI_SUPER_Task_Queue_Manager {
         // $result = $this->plugin->content_generator->generate_summary($post_id);
         // return $result; // Assuming generate_summary returns true or WP_Error
 
-        $this->plugin->logger->log("Processing generate
+        $this->plugin->logger->log("Processing generate_summary task for post ID " . $post_id, "INFO");
+        // Placeholder: Implement actual summary generation here.
+        // Return true to indicate success for now.
+        return true;
+    }
+
+    /**
+     * Handle 'generate_pdf_batch' task.
+     * Task data should contain an array of post IDs.
+     *
+     * @param array $task_data Task data.
+     * @return true|WP_Error True on success, WP_Error on failure.
+     */
+    private function handle_task_generate_pdf_batch($task_data) {
+        $post_ids = $task_data['post_ids'] ?? [];
+        if (empty($post_ids) || !is_array($post_ids)) {
+            return new WP_Error('mfw_task_invalid_pdf_batch', __('No valid post IDs provided for PDF batch generation.', MFW_AI_SUPER_TEXT_DOMAIN));
+        }
+        foreach ($post_ids as $post_id) {
+            $result = $this->plugin->pdf_generator->generate_pdf_for_post(absint($post_id));
+            if (is_wp_error($result)) {
+                $this->plugin->logger->log("PDF batch: Failed to generate PDF for post ID $post_id: " . $result->get_error_message(), "WARNING");
+            }
+        }
+        $this->plugin->logger->log("Processed PDF batch generation for post IDs: " . implode(',', $post_ids), "INFO");
+        return true;
+    }
+
+    // Add more handle_task_* methods as needed for other background tasks.
+
+    /**
+     * Render the Task Queue admin page.
+     */
+    public function render_task_queue_page() {
+        if (!current_user_can($this->plugin->settings->get_capability_for_feature('view_task_queue'))) {
+            wp_die(__('You do not have sufficient permissions to access this page.', MFW_AI_SUPER_TEXT_DOMAIN));
+        }
+        global $wpdb;
+        $table_name = $this->task_queue_table;
+
+        $tasks = $wpdb->get_results("SELECT * FROM $table_name ORDER BY status ASC, priority ASC, scheduled_at ASC LIMIT 100", ARRAY_A);
+
+        echo '<div class="wrap mfw-ai-super-admin-page">';
+        echo '<h1>' . esc_html__('MFW AI Super - Task Queue', MFW_AI_SUPER_TEXT_DOMAIN) . '</h1>';
+        if (empty($tasks)) {
+            echo '<p>' . esc_html__('No tasks in the queue.', MFW_AI_SUPER_TEXT_DOMAIN) . '</p>';
+        } else {
+            echo '<table class="widefat fixed striped"><thead><tr>';
+            echo '<th>' . esc_html__('ID', MFW_AI_SUPER_TEXT_DOMAIN) . '</th>';
+            echo '<th>' . esc_html__('Type', MFW_AI_SUPER_TEXT_DOMAIN) . '</th>';
+            echo '<th>' . esc_html__('Status', MFW_AI_SUPER_TEXT_DOMAIN) . '</th>';
+            echo '<th>' . esc_html__('Priority', MFW_AI_SUPER_TEXT_DOMAIN) . '</th>';
+            echo '<th>' . esc_html__('Attempts', MFW_AI_SUPER_TEXT_DOMAIN) . '</th>';
+            echo '<th>' . esc_html__('Scheduled At', MFW_AI_SUPER_TEXT_DOMAIN) . '</th>';
+            echo '<th>' . esc_html__('Last Error', MFW_AI_SUPER_TEXT_DOMAIN) . '</th>';
+            echo '</tr></thead><tbody>';
+            foreach ($tasks as $task) {
+                echo '<tr>';
+                echo '<td>' . intval($task['id']) . '</td>';
+                echo '<td>' . esc_html($task['task_type']) . '</td>';
+                echo '<td>' . esc_html(ucfirst($task['status'])) . '</td>';
+                echo '<td>' . intval($task['priority']) . '</td>';
+                echo '<td>' . intval($task['attempts']) . ' / ' . intval($task['max_attempts']) . '</td>';
+                echo '<td>' . esc_html($task['scheduled_at']) . '</td>';
+                echo '<td>' . esc_html(mb_strimwidth($task['last_error'], 0, 80, '...')) . '</td>';
+                echo '</tr>';
+            }
+            echo '</tbody></table>';
+        }
+        echo '</div>';
+    }
+}
+// --- End of Task Queue Manager ---
+
+/**
+ * Addon Services Manager
+ * Handles integrated addon-like services (e.g., language/image processing).
+ */
+class MFW_AI_SUPER_Addon_ServicesManager {
+    private $services_to_register = [];
+    private $plugin;
+    private $instances = [];
+
+    public function __construct($services_to_register, $plugin) {
+        $this->services_to_register = $services_to_register;
+        $this->plugin = $plugin;
+    }
+
+    public function init_services() {
+        foreach ($this->services_to_register as $service_key => $class_name) {
+            if (class_exists($class_name)) {
+                $this->instances[$service_key] = new $class_name($this->plugin);
+                if (method_exists($this->instances[$service_key], 'init')) {
+                    $this->instances[$service_key]->init();
+                }
+            }
+        }
+    }
+
+    /**
+     * Get a specific service instance by key.
+     */
+    public function get_service($service_key) {
+        return $this->instances[$service_key] ?? null;
+    }
+}
+
+// --- Example Addon Service Implementations ---
+class MFW_AI_SUPER_Addon_LanguageProcessingService {
+    private $plugin;
+    public function __construct($plugin) { $this->plugin = $plugin; }
+    public function init() { /* Initialize language processing hooks or features */ }
+    public function register_content_hooks() { /* Register content meta boxes, bulk actions, etc. */ }
+    public function register_classification_taxonomy() { /* Register custom taxonomy for classification */ }
+}
+
+class MFW_AI_SUPER_Addon_ImageProcessingService {
+    private $plugin;
+    public function __construct($plugin) { $this->plugin = $plugin; }
+    public function init() { /* Initialize image processing hooks or features */ }
+    public function register_attachment_hooks() { /* Register image upload/update hooks. */ }
+}
+
+// --- Plugin Bootstrap ---
+function mfw_ai_super_plugin_init() {
+    Maziyar_Fetcher_Writer_AI_Super::instance();
+}
+mfw_ai_super_plugin_init();
